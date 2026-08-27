@@ -1,4 +1,3 @@
-from std.algorithm import sync_parallelize
 from std.builtin.sort import sort
 from std.math import log, sqrt
 from std.memory import UnsafePointer
@@ -10,9 +9,15 @@ comptime I64Ptr = UnsafePointer[Int64, AnyOrigin[mut=True]]
 
 
 @fieldwise_init
-struct RankPair(Copyable, Movable):
+struct RankPair(Copyable, Movable, Comparable):
     var score: Float64
     var target: Int64
+
+    def __eq__(self, rhs: Self) -> Bool:
+        return self.score == rhs.score and self.target == rhs.target
+
+    def __lt__(self, rhs: Self) -> Bool:
+        return self.score < rhs.score
 
 
 comptime RankPairPtr = UnsafePointer[RankPair, AnyOrigin[mut=True]]
@@ -98,10 +103,7 @@ def mt_binary_ranking(
 
     var pair_span = Span(unsafe_ptr=pairs, length=kept)
 
-    def score_less(left: RankPair, right: RankPair) capturing -> Bool:
-        return left.score < right.score
-
-    sort[score_less](pair_span)
+    sort(pair_span)
     var negatives = Float64(kept) - positives
     var tp = 0.0
     var fp = 0.0
@@ -181,12 +183,10 @@ def mt_r2_reductions(
         r2_chunk(preds, target, partials, 0, n, 0)
         return
 
-    def work(part: Int) capturing:
+    for part in range(WORKERS):
         var start = part * n // WORKERS
         var end = (part + 1) * n // WORKERS
         r2_chunk(preds, target, partials, start, end, part * 3)
-
-    sync_parallelize[work](WORKERS)
     var squared_error = 0.0
     var target_sum = 0.0
     var target_square_sum = 0.0
