@@ -8,7 +8,10 @@ import torchmetrics.regression as tr
 
 import mojo_torchmetrics.functional.regression as mf
 import mojo_torchmetrics.regression as mr
-from mojo_torchmetrics._regression import R2_PARALLEL_THRESHOLD
+from mojo_torchmetrics._regression import (
+    BASIC_ERRORS_PARALLEL_THRESHOLD,
+    R2_PARALLEL_THRESHOLD,
+)
 
 
 SCALAR_FUNCTIONS = [
@@ -117,6 +120,21 @@ def test_r2_simd_tail_and_parallel_threshold(size):
     preds = target + rng.normal(scale=0.2, size=size)
     ours = mf.r2_score(preds, target)
     theirs = tf.r2_score(
+        torch.from_numpy(preds), torch.from_numpy(target)
+    ).item()
+    assert ours == pytest.approx(theirs, rel=2e-6, abs=2e-7)
+
+
+@pytest.mark.parametrize("size", [11, BASIC_ERRORS_PARALLEL_THRESHOLD + 3])
+@pytest.mark.parametrize(
+    "function", ["mean_squared_error", "mean_absolute_error"]
+)
+def test_basic_errors_simd_tail_and_parallel_threshold(size, function):
+    rng = np.random.default_rng(456)
+    target = rng.normal(size=size)
+    preds = target + rng.normal(scale=0.2, size=size)
+    ours = getattr(mf, function)(preds, target)
+    theirs = getattr(tf, function)(
         torch.from_numpy(preds), torch.from_numpy(target)
     ).item()
     assert ours == pytest.approx(theirs, rel=2e-6, abs=2e-7)

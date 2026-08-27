@@ -124,7 +124,7 @@ def cpu_name():
 def main():
     print(f"Machine: {cpu_name()}; {os.cpu_count()} logical CPUs; {platform.platform()}")
     print(
-        f"Software: Mojo 1.0.0b3.dev2026072406; "
+        f"Software: Mojo 1.1.0.dev2026081105; "
         f"TorchMetrics {torchmetrics.__version__}; PyTorch {torch.__version__}"
     )
     print()

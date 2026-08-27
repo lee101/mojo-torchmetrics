@@ -8,6 +8,7 @@ from ._lib import addr, lib
 
 WIDTH = 13
 R2_PARALLEL_THRESHOLD = 1_000_000
+BASIC_ERRORS_PARALLEL_THRESHOLD = 1_000_000
 
 
 def basic_errors(preds, target):
@@ -15,14 +16,14 @@ def basic_errors(preds, target):
     truth = array(target, np.float64)
     if prediction.shape != truth.shape or not prediction.size:
         raise ValueError("preds and target must have the same non-empty shape")
-    if not np.all(np.isfinite(prediction)) or not np.all(np.isfinite(truth)):
-        raise ValueError("preds and target must contain only finite values")
     prediction = np.ascontiguousarray(prediction.reshape(-1))
     truth = np.ascontiguousarray(truth.reshape(-1))
-    result = np.empty(2, dtype=np.float64)
+    result = np.empty(24, dtype=np.float64)
     lib().mt_basic_errors(
         addr(prediction), addr(truth), addr(result), prediction.size
     )
+    if result[2] == 0.0:
+        raise ValueError("preds and target must contain only finite values")
     return result, prediction.size
 
 
