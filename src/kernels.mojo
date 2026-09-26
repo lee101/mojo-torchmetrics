@@ -1,5 +1,4 @@
 from std.builtin.sort import sort
-from max.algorithm import parallelize
 from std.math import isfinite, log, sqrt
 from std.memory import UnsafePointer
 from std.sys import simd_width_of
@@ -240,6 +239,47 @@ def mt_regression_reductions(
                 reductions[offset + 12] += log_error * log_error
 
 
+def basic_errors_chunk(
+    preds: F64Ptr,
+    target: F64Ptr,
+    result: F64Ptr,
+    n: Int,
+    worker: Int,
+    workers: Int,
+):
+    comptime W = simd_width_of[DType.float64]()
+    var start = worker * n // workers
+    var end = (worker + 1) * n // workers
+    var vector_end = start + (end - start) // W * W
+    var squared = SIMD[DType.float64, W](0.0)
+    var absolute = SIMD[DType.float64, W](0.0)
+    var valid = True
+    for i in range(start, vector_end, W):
+        var prediction = preds.load[width=W](i)
+        var actual = target.load[width=W](i)
+        if (
+            not isfinite(prediction).reduce_and()
+            or not isfinite(actual).reduce_and()
+        ):
+            valid = False
+        var error = prediction - actual
+        squared += error * error
+        absolute += abs(error)
+    var squared_tail = 0.0
+    var absolute_tail = 0.0
+    for i in range(vector_end, end):
+        var prediction = preds[i]
+        var actual = target[i]
+        if not isfinite(prediction) or not isfinite(actual):
+            valid = False
+        var error = prediction - actual
+        squared_tail += error * error
+        absolute_tail += abs(error)
+    result[worker * 3] = squared.reduce_add() + squared_tail
+    result[worker * 3 + 1] = absolute.reduce_add() + absolute_tail
+    result[worker * 3 + 2] = 1.0 if valid else 0.0
+
+
 @export("mt_basic_errors")
 def mt_basic_errors(
     preds_address: Int,
@@ -252,51 +292,15 @@ def mt_basic_errors(
     var preds = f64p(preds_address)
     var target = f64p(target_address)
     var result = f64p(result_address)
+    # Two flops per 16 bytes of input: bandwidth bound, so the partials are
+    # accumulated over a serial chunk loop rather than fanned out.
     var workers = 1 if n < PARALLEL_THRESHOLD else WORKERS
-
-    @parameter
-    def reduce_chunk(worker: Int):
-        comptime W = simd_width_of[DType.float64]()
-        var start = worker * n // workers
-        var end = (worker + 1) * n // workers
-        var vector_end = start + (end - start) // W * W
-        var squared = SIMD[DType.float64, W](0.0)
-        var absolute = SIMD[DType.float64, W](0.0)
-        var valid = True
-        for i in range(start, vector_end, W):
-            var prediction = preds.load[width=W](i)
-            var actual = target.load[width=W](i)
-            if (
-                not isfinite(prediction).reduce_and()
-                or not isfinite(actual).reduce_and()
-            ):
-                valid = False
-            var error = prediction - actual
-            squared += error * error
-            absolute += abs(error)
-        var squared_tail = 0.0
-        var absolute_tail = 0.0
-        for i in range(vector_end, end):
-            var prediction = preds[i]
-            var actual = target[i]
-            if not isfinite(prediction) or not isfinite(actual):
-                valid = False
-            var error = prediction - actual
-            squared_tail += error * error
-            absolute_tail += abs(error)
-        result[worker * 3] = squared.reduce_add() + squared_tail
-        result[worker * 3 + 1] = absolute.reduce_add() + absolute_tail
-        result[worker * 3 + 2] = 1.0 if valid else 0.0
-
-    if n < PARALLEL_THRESHOLD:
-        reduce_chunk(0)
-        return
-
-    parallelize[reduce_chunk](WORKERS, WORKERS)
+    for worker in range(workers):
+        basic_errors_chunk(preds, target, result, n, worker, workers)
     var squared = 0.0
     var absolute = 0.0
     var valid = True
-    for worker in range(WORKERS):
+    for worker in range(workers):
         squared += result[worker * 3]
         absolute += result[worker * 3 + 1]
         valid = valid and result[worker * 3 + 2] != 0.0
