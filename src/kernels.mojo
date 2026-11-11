@@ -146,8 +146,8 @@ def r2_chunk(
     var target_square_sum = SIMD[DType.float64, W](0.0)
     var vector_end = start + (end - start) // W * W
     for i in range(start, vector_end, W):
-        var prediction = preds.load[width=W](i)
-        var actual = target.load[width=W](i)
+        var prediction = preds.unsafe_load[width=W](i)
+        var actual = target.unsafe_load[width=W](i)
         var error = prediction - actual
         squared_error += error * error
         target_sum += actual
@@ -255,8 +255,8 @@ def basic_errors_chunk(
     var absolute = SIMD[DType.float64, W](0.0)
     var valid = True
     for i in range(start, vector_end, W):
-        var prediction = preds.load[width=W](i)
-        var actual = target.load[width=W](i)
+        var prediction = preds.unsafe_load[width=W](i)
+        var actual = target.unsafe_load[width=W](i)
         if (
             not isfinite(prediction).reduce_and()
             or not isfinite(actual).reduce_and()
